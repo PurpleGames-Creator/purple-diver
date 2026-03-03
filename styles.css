@@ -334,7 +334,7 @@ body {
 /* Canvas 上オーバーレイ：深さ表示（〇m） */
 .depth-overlay {
   position: absolute;
-  top: 62px;
+  top: 88px;
   left: 0;
   right: 0;
   padding: 14px 12px 10px;
@@ -349,7 +349,7 @@ body {
   display: inline-flex;
   align-items: baseline;
   gap: 4px;
-  font-size: clamp(2.8rem, 8vw, 4.4rem);
+  font-size: clamp(3.4rem, 9vw, 5.4rem);
   font-weight: 800;
   letter-spacing: 0.08em;
   color: #ff1a1a;
@@ -380,7 +380,7 @@ body {
 
 @media (min-width: 768px) {
   .depth-value {
-    font-size: clamp(3.2rem, 6vw, 4.8rem);
+    font-size: clamp(3.8rem, 7vw, 5.8rem);
   }
 }
 

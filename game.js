@@ -159,6 +159,9 @@ class PurpleDrillerGame {
     this.explosionSound = null;
     this.landingSound = null;
     this.invincibleSound = null;
+    this.drillMaxVolume = 0.02;
+    this.drillFadeDurationMs = 100;
+    this._drillFadeRafId = null;
 
     // 降下（intro）用の重力
     this.introVelocityY = 0;
@@ -1512,11 +1515,53 @@ class PurpleDrillerGame {
     ctx.restore();
   }
 
+  /**
+   * ドリル音のフェード（volume を durationMs かけて targetVolume へ）
+   * @param {number} targetVolume 目標ボリューム（0〜1）
+   * @param {number} durationMs フェード時間（ミリ秒）
+   * @param {boolean} stopAtEnd true の場合、フェード完了時に pause()+reset する
+   */
+  _fadeDrillVolume(targetVolume, durationMs, stopAtEnd) {
+    if (!this.drillSound) return;
+    if (this._drillFadeRafId != null) {
+      cancelAnimationFrame(this._drillFadeRafId);
+      this._drillFadeRafId = null;
+    }
+    const startVol = this.drillSound.volume ?? 0;
+    const delta = targetVolume - startVol;
+    const startTime = performance.now();
+
+    const step = (now) => {
+      if (!this.drillSound) {
+        this._drillFadeRafId = null;
+        return;
+      }
+      const t = Math.min(1, (now - startTime) / durationMs);
+      this.drillSound.volume = startVol + delta * t;
+      if (t < 1) {
+        this._drillFadeRafId = requestAnimationFrame(step);
+      } else {
+        this._drillFadeRafId = null;
+        this.drillSound.volume = targetVolume;
+        if (stopAtEnd && targetVolume === 0) {
+          try {
+            this.drillSound.pause();
+            this.drillSound.currentTime = 0;
+          } catch (_e) {
+            // noop
+          }
+        }
+      }
+    };
+
+    this._drillFadeRafId = requestAnimationFrame(step);
+  }
+
   _prepareDrillSound() {
     if (!this.drillSound) {
       this.drillSound = new Audio("./ドリル音.mp3");
       this.drillSound.loop = true;
-      this.drillSound.volume = 0.04;
+      this.drillSound.volume = 0;
     }
     this.drillSound.load();
   }
@@ -1526,25 +1571,23 @@ class PurpleDrillerGame {
       this._prepareDrillSound();
     }
     try {
+      // ボリューム0から再生し、短時間でフェードイン
+      this.drillSound.volume = 0;
       this.drillSound.currentTime = 0;
       const p = this.drillSound.play();
       if (p && typeof p.catch === "function") {
         p.catch(() => {});
       }
+      this._fadeDrillVolume(this.drillMaxVolume, this.drillFadeDurationMs, false);
     } catch (e) {
       console.error("ドリル音の再生に失敗しました:", e);
     }
   }
 
   _stopDrillSound() {
-    if (this.drillSound) {
-      try {
-        this.drillSound.pause();
-        this.drillSound.currentTime = 0;
-      } catch (_e) {
-        // noop
-      }
-    }
+    if (!this.drillSound) return;
+    // 現在の音量から0までフェードアウトし、終了時に停止
+    this._fadeDrillVolume(0, this.drillFadeDurationMs, true);
   }
 
   _playExplosionSound() {
