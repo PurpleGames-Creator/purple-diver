@@ -16,6 +16,36 @@ document.addEventListener("DOMContentLoaded", () => {
   let lastGameOverNickname = null;
   let gameoverScoreAnimId = null;
 
+  // 画面上部にエラー内容を表示するユーティリティ
+  const errorBanner = document.getElementById("error-banner");
+  window.showGameError = function (message) {
+    if (!errorBanner) {
+      console.error("[GAME ERROR]", message);
+      return;
+    }
+    errorBanner.textContent = String(message);
+    errorBanner.style.display = "block";
+    setTimeout(() => {
+      if (errorBanner.textContent === message) {
+        errorBanner.style.display = "none";
+      }
+    }, 5000);
+  };
+
+  // モバイルでのダブルタップズーム防止
+  let lastTouchEndTime = 0;
+  document.addEventListener(
+    "touchend",
+    (ev) => {
+      const now = performance.now();
+      if (now - lastTouchEndTime < 300) {
+        ev.preventDefault();
+      }
+      lastTouchEndTime = now;
+    },
+    { passive: false }
+  );
+
   // タブ切り替え
   tabButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -41,6 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // GAME START ボタン
   startButton.addEventListener("click", async () => {
+    console.log("[BOOT] 1. GAME START ボタン押下");
     const nickname = nicknameInput.value.trim();
     if (!nickname) {
       alert("ニックネームを入力してください。");
@@ -48,12 +79,25 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    console.log("[BOOT] 2. ニックネーム確認OK:", nickname);
     screenHome.classList.remove("screen--active");
     screenGame.classList.add("screen--active");
+    console.log("[BOOT] 3. 画面切り替え完了（home -> game）");
 
     // ゲーム開始（start() 内でドリル音の load を実行）
     if (window.startPurpleDiverGame) {
-      window.startPurpleDiverGame({ nickname });
+      try {
+        console.log("[BOOT] 4. startPurpleDiverGame 呼び出し開始");
+        window.startPurpleDiverGame({ nickname });
+        console.log("[BOOT] 5. startPurpleDiverGame 呼び出し完了");
+      } catch (e) {
+        console.error("ゲーム開始中にエラーが発生しました:", e);
+        if (typeof window.showGameError === "function") {
+          window.showGameError(
+            `ゲーム開始中にエラーが発生しました: ${e && e.message ? e.message : e}`
+          );
+        }
+      }
     }
   });
 

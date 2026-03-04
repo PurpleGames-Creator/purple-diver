@@ -24,11 +24,17 @@ html,
 body {
   margin: 0;
   padding: 0;
+  width: 100%;
   height: 100%;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
   background: radial-gradient(circle at top, #241b57 0, #050012 55%, #000 100%);
   color: var(--text);
+  overflow: hidden;
+  position: fixed;
+  top: 0;
+  left: 0;
+  overscroll-behavior: none;
 }
 
 body {
@@ -44,6 +50,20 @@ body {
   padding: 12px 12px 18px;
   display: flex;
   flex-direction: column;
+}
+
+#error-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  background: rgba(239, 68, 68, 0.9);
+  color: #fef2f2;
+  text-align: center;
+  display: none;
 }
 
 .screen {
@@ -427,6 +447,7 @@ body {
   height: 100%;
   display: block;
   touch-action: none;
+  -webkit-user-select: none;
 }
 
 /* ゲームオーバーオーバーレイ（モバイル最適化・パープル基調） */

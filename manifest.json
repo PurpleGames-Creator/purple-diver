@@ -1,0 +1,16 @@
+{
+  "name": "🟣Purple Diver🟣",
+  "short_name": "🟣Purple Diver🟣",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#6a0dad",
+  "icons": [
+    {
+      "src": "./正面.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+

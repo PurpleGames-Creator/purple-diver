@@ -82,6 +82,7 @@ class PurpleDiverGame {
    * @param {(finalDepth: number) => void} options.onGameOver
    */
   constructor({ canvas, depthLabelEl, nickname, onGameOver }) {
+    console.log("[BOOT] G1. PurpleDiverGame コンストラクタ開始");
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.depthLabelEl = depthLabelEl;
@@ -121,10 +122,13 @@ class PurpleDiverGame {
 
     // 進行
     this.depthMeters = 0;
-    this.scrollSpeedBase = 220 * 1.3; // px/sec（初期速度を1.3倍に強化）
-    this.scrollSpeedMax = 660; // 上限（base の約3倍）。これ以上は加速しない
-    this.depthAtMaxSpeed = 1000; // この深さ（m）で最大速度に到達
-    this.depthPerPixel = 0.05; // 1px 進むごとに 0.05m とする（以前の1/10）
+    // スタート時の初速をこれまでより 1.5 倍程度に強化
+    this.scrollSpeedBase = 220 * 1.95; // px/sec
+    // 500m 到達時に到達したい最高速度の目安（base の約3倍弱）
+    this.scrollSpeedMax = 640;
+    this.depthAtMaxSpeed = 500; // 500m で最大速度に到達
+    // 水深の進み方をよりじっくりにするため係数を 1/5 に調整
+    this.depthPerPixel = 0.01; // 1px 進むごとに 0.01m
     this.bgOffset = 0;
     this.horizonY = 0; // 地平線（地面）の Y 座標
 
@@ -134,14 +138,24 @@ class PurpleDiverGame {
     this.keyLeft = false;
     this.keyRight = false;
     this.horizontalDir = 0;
-    this.horizontalSpeed = 220 * 1.44; // px/sec（元の1.2倍×1.2＝操作感強化）
+    // 左右移動スピードをさらに 1.3 倍強化
+    this.horizontalSpeed = 220 * 1.44 * 1.3; // px/sec
 
     // 障害物・アイテム
     this.bombs = [];
     this.beers = [];
     this.bombRadius = 18 * 0.5;
-    this.beerRadius = 16 * 0.5;
-    this.bombSpawnRatePerSec = 1.2; // 秒あたり出現期待値（一定）
+    // ロブスターアイテムの当たり判定半径（表示サイズ 2倍に合わせて拡大）
+    this.beerRadius = 16 * 0.5 * 2;
+    // 無敵アイテム（ロブスター）の画像アセット
+    this.lobsterImage = new Image();
+    this.lobsterImageLoaded = false;
+    this.lobsterImage.src = "./ロブスター.png";
+    this.lobsterImage.onload = () => {
+      this.lobsterImageLoaded = true;
+    };
+    // 爆弾（魚雷）の出現率：従来比 1.5 倍
+    this.bombSpawnRatePerSec = 1.2 * 1.5; // 秒あたり出現期待値
     this.beerSpawnRatePerSec = 0.25;
 
     // 無敵
@@ -154,7 +168,7 @@ class PurpleDiverGame {
     this.bubbleParticles = []; // ビールの泡
     this.invincibleTrailParticles = []; // 無敵オーブの残像
 
-    // 効果音（ドリル音は new Audio() でシンプル再生）
+    // 効果音（ドリル音はシンプルな Audio オブジェクトで再生）
     this.drillSound = null;
     this.explosionSound = null;
     this.landingSound = (() => {
@@ -164,7 +178,8 @@ class PurpleDiverGame {
       return a;
     })();
     this.invincibleSound = null;
-    this.drillMaxVolume = 0.02;
+    // ドリル音の最大ボリューム（以前の 1.5 倍に増幅）
+    this.drillMaxVolume = 0.03;
     this.drillFadeDurationMs = 100;
     this._drillFadeRafId = null;
 
@@ -172,9 +187,7 @@ class PurpleDiverGame {
     this.introVelocityY = 0;
     this.GRAVITY_INTRO = 480; // px/s^2（地球の重力をイメージ）
 
-    // マイルストーン
-    this.milestoneEffects = [];
-    this.nextMilestone = 100;
+    // マイルストーン演出は廃止（深度テキストのみ維持）
 
     // 爆発演出
     this.explosion = null; // { x, y, startTime, duration }
@@ -195,9 +208,12 @@ class PurpleDiverGame {
     this._onRelease = this._onRelease.bind(this);
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
+
+    console.log("[BOOT] G2. PurpleDiverGame コンストラクタ完了");
   }
 
   start() {
+    console.log("[BOOT] G3. start() 呼び出し");
     this._setupCanvasSize();
     window.addEventListener("resize", this._handleResize);
     this._setupControls();
@@ -213,8 +229,7 @@ class PurpleDiverGame {
     this.sparkParticles = [];
     this.bubbleParticles = [];
     this.invincibleTrailParticles = [];
-    this.milestoneEffects = [];
-    this.nextMilestone = 100;
+    // マイルストーン演出は廃止（深度テキストのみ維持）
     this.invincibleUntil = 0;
     this.boostUntil = 0;
     this.bombBoostStartTime = 0;
@@ -225,12 +240,29 @@ class PurpleDiverGame {
 
     // 効果音を念のため停止
     this._stopDrillSound();
-    // GAME START クリック直後の処理として、ドリル音・着地音の準備（load）を行う
+    // GAME START クリック直後の処理として、効果音をまとめて準備（preload）する
     this._prepareDrillSound();
     if (this.landingSound) this.landingSound.load();
 
+    // 爆発音の事前読み込み
+    if (!this.explosionSound) {
+      this.explosionSound = new Audio("./爆発音.mp3");
+      this.explosionSound.loop = false;
+      this.explosionSound.volume = 0.5;
+    }
+    this.explosionSound.load();
+
+    // 無敵音の事前読み込み
+    if (!this.invincibleSound) {
+      this.invincibleSound = new Audio("./無敵音.mp3");
+      this.invincibleSound.loop = false;
+      this.invincibleSound.volume = 0.04;
+    }
+    this.invincibleSound.load();
+
     if (this.depthLabelEl) this.depthLabelEl.textContent = "0";
 
+    console.log("[BOOT] G4. requestAnimationFrame(_loop) を登録");
     this.rafId = requestAnimationFrame(this._loop);
   }
 
@@ -403,6 +435,7 @@ class PurpleDiverGame {
 
   _loop(timestamp) {
     if (this.lastTime == null) {
+      console.log("[BOOT] G5. _loop 初回フレーム到達");
       this.lastTime = timestamp;
       this.introStartTime = timestamp;
       this._renderIntro(0);
@@ -435,6 +468,7 @@ class PurpleDiverGame {
       // 約1秒待機したら掘削（playing）へ移行
       if (elapsedWait >= 1.0) {
         this.state = "playing";
+        console.log("[BOOT] G6. state=playing に遷移（掘削開始）");
         this._startDrillSound();
         this.depthMeters = 0;
         this.bombs = [];
@@ -488,12 +522,13 @@ class PurpleDiverGame {
   }
 
   _updatePlaying(dt) {
-    // スクロール速度：深さに応じて加速し、上限でキャップ（0〜500m はゆったり、1000m で最大）
-    const depthNorm = Math.min(1, this.depthMeters / this.depthAtMaxSpeed);
-    const easeIn = depthNorm * depthNorm; // 序盤ゆったり・後半で一気に
+    // スクロール速度：深さに応じて 50m ごとに段階的に加速し、500m で最大速度に到達
+    const cappedDepthForSpeed = Math.min(this.depthMeters, this.depthAtMaxSpeed); // 0〜500m
+    const steps = cappedDepthForSpeed / 50; // 50m ごとに 1 ステップ（0〜10）
     const speedRange = this.scrollSpeedMax - this.scrollSpeedBase;
-    let speed = this.scrollSpeedBase + speedRange * easeIn;
-    speed = Math.min(speed, this.scrollSpeedMax); // 最大速度の厳守
+    const perStep = speedRange / (this.depthAtMaxSpeed / 50 || 1); // 500m / 50m = 10 ステップ前提
+    let speed = this.scrollSpeedBase + perStep * steps;
+    speed = Math.min(speed, this.scrollSpeedMax); // 上限でキャップ
 
     // 掘削開始直後のブースト
     if (performance.now() < this.boostUntil) {
@@ -540,19 +575,28 @@ class PurpleDiverGame {
     // 障害物・アイテムの生成
     this._spawnEntities(dt);
 
-    // マイルストーン
-    this._updateMilestones(dt);
-
     // パーティクル更新
     this._updateDustParticles(dt, speed);
     this._updateSparkParticles(dt, speed);
     this._updateBubbleParticles(dt);
     this._updateInvincibleTrailParticles(dt);
 
-    // 移動（上方向へスクロール）
+    // 移動（上方向へスクロール）＋魚雷の横移動
     const deltaY = -speed * dt;
     this.bombs.forEach((b) => {
       b.y += deltaY;
+      const vx = typeof b.vx === "number" ? b.vx : 0;
+      if (vx !== 0) {
+        b.x += vx * dt;
+        // 画面端でのバウンド
+        if (b.x - b.radius < 0) {
+          b.x = b.radius;
+          b.vx = -vx;
+        } else if (b.x + b.radius > W) {
+          b.x = W - b.radius;
+          b.vx = -vx;
+        }
+      }
     });
     this.beers.forEach((b) => {
       b.y += deltaY;
@@ -583,10 +627,22 @@ class PurpleDiverGame {
 
   _spawnEntities(dt) {
     if (Math.random() < this.bombSpawnRatePerSec * dt) {
+      // 魚雷の生成：100m 以上では横移動速度を付与（深さごとに 1.2 倍スケーリング）
+      let vx = 0;
+      if (this.depthMeters >= 100) {
+        // ベース横速度を従来の 50%（0.25倍）に抑えて回避余地を確保
+        const baseVx = this.scrollSpeedBase * 0.25; // 100m 時点の基準横速度
+        const steps = Math.max(0, Math.floor((this.depthMeters - 100) / 100)); // 100m ごとに増加
+        const scale = Math.pow(1.2, steps);
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        vx = dir * baseVx * scale;
+      }
+
       this.bombs.push({
         x: Math.random() * this.logicalWidth,
         y: this.logicalHeight + this.bombRadius * 2,
         radius: this.bombRadius,
+        vx,
       });
     }
 
@@ -772,15 +828,22 @@ class PurpleDiverGame {
     ctx.restore();
 
     // 上部の海面表現（波とハイライト）
-    this._drawSeaSurface(w, h, d);
+    this._drawSeaSurface(w, h, groundY, d);
 
     // 深くなるほど周辺光量を落とす
     this._drawVignette(w, h, d);
   }
 
-  _drawSeaSurface(w, h, depth) {
+  _drawSeaSurface(w, h, groundY, depth) {
     const ctx = this.ctx;
-    const baseY = h * 0.12;
+    // 地平線（元の地面）位置を基準に、画面上側に少しオフセットした位置を海面とみなす。
+    // groundY はスクロールとともに変化するため、海面もプレイヤーの潜行に合わせて
+    // 画面外へ上方向に流れていく。
+    const baseY = groundY - this.logicalHeight * 0.4;
+    // 完全に画面の下に沈んだ、あるいは十分上に抜けた場合は描画しない
+    if (baseY > h + 40 || baseY < -80) {
+      return;
+    }
     const waveAmp = 6;
     const waveLen = 80;
     const t = performance.now() * 0.001;
@@ -788,12 +851,14 @@ class PurpleDiverGame {
     ctx.save();
 
     // 水面付近の強いハイライト
-    const surfGrad = ctx.createLinearGradient(0, 0, 0, baseY);
+    const surfTop = Math.max(0, baseY - 30);
+    const surfBottom = Math.max(0, baseY);
+    const surfGrad = ctx.createLinearGradient(0, surfTop, 0, surfBottom);
     surfGrad.addColorStop(0, "rgba(255,255,255,0.95)");
     surfGrad.addColorStop(0.4, "rgba(224,248,255,0.9)");
     surfGrad.addColorStop(1, "rgba(180,232,255,0.0)");
     ctx.fillStyle = surfGrad;
-    ctx.fillRect(0, 0, w, baseY);
+    ctx.fillRect(0, surfTop, w, Math.max(0, surfBottom - surfTop));
 
     // 波打ち際の輪郭（さざ波）
     ctx.beginPath();
@@ -811,20 +876,6 @@ class PurpleDiverGame {
     ctx.closePath();
     ctx.fillStyle = "rgba(255,255,255,0.22)";
     ctx.fill();
-
-    // 水面上に走るハイライトライン
-    ctx.globalCompositeOperation = "lighter";
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = "rgba(255,255,255,0.55)";
-    ctx.beginPath();
-    for (let x = 0; x < w; x += 40) {
-      const y =
-        baseY +
-        Math.sin(x / 50 + t * 1.6) * waveAmp * 0.7;
-      ctx.moveTo(x - 10, y);
-      ctx.lineTo(x + 10, y);
-    }
-    ctx.stroke();
 
     ctx.restore();
   }
@@ -882,36 +933,7 @@ class PurpleDiverGame {
     ctx.restore();
   }
 
-  _drawBoostSpeedLines(w, h, timestamp) {
-    const ctx = this.ctx;
-    const t = timestamp * 0.015;
-    ctx.save();
-    ctx.globalAlpha = 0.35 + Math.sin(t) * 0.1;
-    ctx.strokeStyle = "rgba(255, 220, 100, 0.9)";
-    ctx.lineWidth = 1.5;
-    ctx.lineCap = "round";
-    const len = 28 + Math.sin(t * 1.3) * 8;
-    const corners = [
-      [0, 0, 1, 1],
-      [w, 0, -1, 1],
-      [w, h, -1, -1],
-      [0, h, 1, -1],
-    ];
-    corners.forEach(([cx, cy, dx, dy], idx) => {
-      for (let i = 0; i < 5; i++) {
-        const offset = (idx * 1.7 + i * 0.6 + t * 2) % 4;
-        const x0 = cx + (dx * (offset * 15));
-        const y0 = cy + (dy * (offset * 12));
-        const x1 = x0 + dx * (len + Math.sin(t + i) * 10);
-        const y1 = y0 + dy * (len * 0.6 + Math.cos(t + i * 0.7) * 8);
-        ctx.beginPath();
-        ctx.moveTo(x0, y0);
-        ctx.lineTo(x1, y1);
-        ctx.stroke();
-      }
-    });
-    ctx.restore();
-  }
+  // _drawInvincibleWaveOverlay は無敵エフェクト簡素化のため削除（キャラ周りのオーラのみ維持）
 
   _renderPlaying(timestamp, isFinalFrame = false) {
     const ctx = this.ctx;
@@ -939,18 +961,11 @@ class PurpleDiverGame {
     this._drawBubbleParticles();
     this._drawInvincibleTrailParticles();
 
-    // マイルストーンテキスト（ズーム→ホールド→パーティクル爆発）
-    this._drawMilestoneEffects();
-
     // キャラクターと無敵オーラ（左右端ループ描画）
     const inv = this.isInvincible;
     this._drawWrappedCharacter(this.charX, this.charY, inv, timestamp);
 
-    // 無敵中爆弾ブースト時のスピード線
-    if (this.bombBoostStartTime > 0) {
-      const elapsed = (performance.now() - this.bombBoostStartTime) / 1000;
-      if (elapsed < 4) this._drawBoostSpeedLines(w, h, timestamp);
-    }
+    // 無敵時も画面全体の追加エフェクトは描かず、キャラ周りのオーラのみ表示
 
     if (this.state === "gameover" && isFinalFrame) {
       ctx.fillStyle = "rgba(255,64,96,0.25)";
@@ -1488,7 +1503,8 @@ class PurpleDiverGame {
         return;
       }
       const t = Math.min(1, (now - startTime) / durationMs);
-      this.drillSound.volume = startVol + delta * t;
+      const vol = startVol + delta * t;
+      this.drillSound.volume = vol;
       if (t < 1) {
         this._drillFadeRafId = requestAnimationFrame(step);
       } else {
@@ -1514,6 +1530,22 @@ class PurpleDiverGame {
       this.drillSound.loop = true;
       this.drillSound.volume = 0;
     }
+    const timeoutId = setTimeout(() => {
+      if (!this.drillSound || isNaN(this.drillSound.duration)) {
+        const msg = "ドリル音.mp3 の読み込みが3秒以内に完了しませんでした。フォールバックでゲームを継続します。";
+        console.warn(msg);
+        if (typeof window !== "undefined" && typeof window.showGameError === "function") {
+          window.showGameError(msg);
+        }
+      }
+    }, 3000);
+    this.drillSound.addEventListener(
+      "canplaythrough",
+      () => {
+        clearTimeout(timeoutId);
+      },
+      { once: true }
+    );
     this.drillSound.load();
   }
 
@@ -1548,11 +1580,16 @@ class PurpleDiverGame {
         this.explosionSound.loop = false;
         this.explosionSound.volume = 0.2;
       }
-      // 毎回先頭から再生
-      this.explosionSound.currentTime = 0;
-      const p = this.explosionSound.play();
+
+      // ベースインスタンスからクローンを作り、毎回先頭から再生（重なりも許可）
+      const node = this.explosionSound.cloneNode(true);
+      node.currentTime = 0;
+      node.volume = this.explosionSound.volume;
+      const p = node.play();
       if (p && typeof p.catch === "function") {
-        p.catch(() => {});
+        p.catch((err) => {
+          console.error("爆発音の再生中にエラーが発生しました:", err);
+        });
       }
     } catch (e) {
       console.error("爆発音の再生に失敗しました:", e);
@@ -1565,7 +1602,9 @@ class PurpleDiverGame {
       this.landingSound.currentTime = 0;
       const p = this.landingSound.play();
       if (p && typeof p.catch === "function") {
-        p.catch(() => {});
+        p.catch((err) => {
+          console.error("着地音の再生中にエラーが発生しました:", err);
+        });
       }
     } catch (e) {
       console.error("着地音の再生に失敗しました:", e);
@@ -1579,10 +1618,16 @@ class PurpleDiverGame {
         this.invincibleSound.loop = false;
         this.invincibleSound.volume = 0.04;
       }
-      this.invincibleSound.currentTime = 0;
-      const p = this.invincibleSound.play();
+
+      // 無敵音もクローンで重ねて再生できるようにする
+      const node = this.invincibleSound.cloneNode(true);
+      node.currentTime = 0;
+      node.volume = this.invincibleSound.volume;
+      const p = node.play();
       if (p && typeof p.catch === "function") {
-        p.catch(() => {});
+        p.catch((err) => {
+          console.error("無敵音の再生中にエラーが発生しました:", err);
+        });
       }
     } catch (e) {
       console.error("無敵音の再生に失敗しました:", e);
@@ -1606,222 +1651,154 @@ class PurpleDiverGame {
     ctx.restore();
   }
 
-  _updateMilestones(dt) {
-    const now = performance.now();
-    while (this.depthMeters >= this.nextMilestone) {
-      this.milestoneEffects.push({
-        value: this.nextMilestone,
-        life: 0,
-        lifeMax: 2.5,
-        particles: [],
-        particlesSpawned: false,
-      });
-      this.screenFlashUntil = now + 180;
-      this.screenShakeUntil = now + 380;
-      this.nextMilestone += 100;
-    }
-
-    this.milestoneEffects.forEach((m) => {
-      m.life += dt;
-      if (m.life >= 0.7 && !m.particlesSpawned) {
-        m.particlesSpawned = true;
-        const count = 24;
-        for (let i = 0; i < count; i++) {
-          const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
-          const speed = 80 + Math.random() * 120;
-          m.particles.push({
-            x: 0,
-            y: 0,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: 0,
-            lifeMax: 0.7 + Math.random() * 0.3,
-          });
-        }
-      }
-      m.particles.forEach((p) => {
-        p.life += dt;
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-      });
-      m.particles = m.particles.filter((p) => p.life < p.lifeMax);
-    });
-    this.milestoneEffects = this.milestoneEffects.filter(
-      (m) => m.life < m.lifeMax
-    );
-  }
-
-  _drawMilestoneEffects() {
-    const ctx = this.ctx;
-    const w = this.logicalWidth;
-    const h = this.logicalHeight;
-    if (!this.milestoneEffects.length) return;
-
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    this.milestoneEffects.forEach((m) => {
-      const life = m.life;
-      const lifeMax = m.lifeMax;
-
-      if (life < 0.7) {
-        const phase = life < 0.5 ? "zoom" : "hold";
-        const zoomT = life < 0.5 ? life / 0.5 : 1;
-        const scale = phase === "zoom" ? 0.25 + 0.95 * zoomT : 1.2;
-        const alpha = phase === "zoom" ? zoomT : 1;
-        const y = h * 0.26;
-
-        ctx.save();
-        ctx.translate(w / 2, y);
-        ctx.scale(scale, scale);
-        ctx.globalAlpha = alpha;
-        const fontSize = Math.min(
-          Math.floor(72 * 0.65),
-          Math.floor(h * 0.078),
-          Math.floor((w * 0.85) / 10)
-        );
-        ctx.font = `bold ${fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-        const text = `${m.value}m REACHED!`;
-        ctx.shadowColor = "rgba(255, 215, 0, 0.98)";
-        ctx.shadowBlur = 20;
-        ctx.fillStyle = "#ffd700";
-        ctx.fillText(text, 0, 0);
-        ctx.shadowBlur = 14;
-        ctx.fillStyle = "rgba(255, 250, 205, 0.9)";
-        ctx.fillText(text, 0, 0);
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = "rgba(0,0,0,0.9)";
-        ctx.lineWidth = Math.max(3, fontSize * 0.08);
-        ctx.strokeText(text, 0, 0);
-        ctx.fillStyle = "#fffacd";
-        ctx.fillText(text, 0, 0);
-        ctx.restore();
-      }
-
-      m.particles.forEach((p) => {
-        const t = p.life / p.lifeMax;
-        const alpha = 1 - t;
-        ctx.save();
-        ctx.translate(w / 2 + p.x, h * 0.26 + p.y);
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
-        ctx.shadowColor = "rgba(255, 200, 50, 0.9)";
-        ctx.shadowBlur = 8;
-        ctx.fillRect(-3, -3, 6, 6);
-        ctx.restore();
-      });
-    });
-
-    ctx.restore();
-  }
+  // マイルストーン用の更新／描画ロジックは不要になったため削除済み
 
   _drawBomb(bomb, timestamp) {
     const ctx = this.ctx;
     const r = bomb.radius;
     ctx.save();
 
-    // 鋳鉄ボディ（重厚な金属質感）
-    const bodyGrad = ctx.createRadialGradient(
-      bomb.x - r * 0.4,
-      bomb.y - r * 0.4,
-      r * 0.3,
-      bomb.x,
-      bomb.y,
-      r * 1.2
-    );
-    bodyGrad.addColorStop(0, "#6b7280"); // ハイライト
-    bodyGrad.addColorStop(0.4, "#374151");
-    bodyGrad.addColorStop(1, "#111827");
+    // 魚雷ボディ（横長カプセル形状・黒々とした重厚メタル）
+    const bodyLength = r * 3.8;
+    const bodyRadius = r * 0.95;
+    const centerX = bomb.x;
+    const centerY = bomb.y;
+    const leftX = centerX - bodyLength / 2;
+    const rightX = centerX + bodyLength / 2;
+    const topY = centerY - bodyRadius;
+    const bottomY = centerY + bodyRadius;
+
+    const bodyGrad = ctx.createLinearGradient(leftX, centerY, rightX, centerY);
+    bodyGrad.addColorStop(0, "#020617");
+    bodyGrad.addColorStop(0.25, "#111827");
+    bodyGrad.addColorStop(0.55, "#020617");
+    bodyGrad.addColorStop(0.9, "#0b1120");
+    bodyGrad.addColorStop(1, "#000000");
 
     ctx.fillStyle = bodyGrad;
     ctx.beginPath();
-    ctx.arc(bomb.x, bomb.y, r, 0, Math.PI * 2);
+    ctx.moveTo(leftX, topY);
+    ctx.lineTo(rightX, topY);
+    ctx.arc(rightX, centerY, bodyRadius, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(leftX, bottomY);
+    ctx.arc(leftX, centerY, bodyRadius, Math.PI / 2, -Math.PI / 2);
+    ctx.closePath();
     ctx.fill();
 
-    // ボディの傷・錆
-    ctx.strokeStyle = "rgba(15,23,42,0.8)";
-    ctx.lineWidth = 1;
+    // ノーズ部分のハイライト（鈍い金属光沢）
+    const noseGrad = ctx.createRadialGradient(
+      rightX - bodyRadius * 0.3,
+      centerY,
+      0,
+      rightX,
+      centerY,
+      bodyRadius * 1.3
+    );
+    noseGrad.addColorStop(0, "rgba(249, 250, 251, 0.7)");
+    noseGrad.addColorStop(0.3, "rgba(148, 163, 184, 0.4)");
+    noseGrad.addColorStop(1, "rgba(15, 23, 42, 0)");
+    ctx.fillStyle = noseGrad;
     ctx.beginPath();
-    ctx.moveTo(bomb.x - r * 0.6, bomb.y + r * 0.1);
-    ctx.lineTo(bomb.x - r * 0.1, bomb.y + r * 0.45);
+    ctx.arc(rightX - bodyRadius * 0.1, centerY, bodyRadius * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 後部フィン＆推進部
+    const finWidth = bodyRadius * 1.4;
+    const finHeight = bodyRadius * 1.6;
+
+    // 後部の円筒推進部
+    const tailRadius = bodyRadius * 0.9;
+    const tailGrad = ctx.createLinearGradient(
+      leftX - tailRadius * 2,
+      centerY,
+      leftX,
+      centerY
+    );
+    tailGrad.addColorStop(0, "#000000");
+    tailGrad.addColorStop(0.5, "#020617");
+    tailGrad.addColorStop(1, "#111827");
+    ctx.fillStyle = tailGrad;
+    ctx.beginPath();
+    ctx.arc(leftX, centerY, tailRadius, Math.PI / 2, (3 * Math.PI) / 2);
+    ctx.lineTo(leftX - tailRadius * 1.8, centerY - tailRadius * 0.6);
+    ctx.lineTo(leftX - tailRadius * 1.8, centerY + tailRadius * 0.6);
+    ctx.closePath();
+    ctx.fill();
+
+    // 上フィン（左右非対称でメカニカルな形状）
+    ctx.fillStyle = "#020617";
+    ctx.beginPath();
+    ctx.moveTo(leftX - tailRadius * 0.2, centerY);
+    ctx.lineTo(leftX - finWidth * 0.6, centerY - finHeight * 0.3);
+    ctx.lineTo(leftX - finWidth * 0.1, centerY - finHeight * 0.9);
+    ctx.closePath();
+    ctx.fill();
+
+    // 下フィン
+    ctx.beginPath();
+    ctx.moveTo(leftX - tailRadius * 0.2, centerY);
+    ctx.lineTo(leftX - finWidth * 0.6, centerY + finHeight * 0.3);
+    ctx.lineTo(leftX - finWidth * 0.1, centerY + finHeight * 0.9);
+    ctx.closePath();
+    ctx.fill();
+
+    // 簡易プロペラブレード
+    ctx.strokeStyle = "rgba(15,23,42,0.9)";
+    ctx.lineWidth = bodyRadius * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(leftX - tailRadius * 1.3, centerY - tailRadius * 0.4);
+    ctx.lineTo(leftX - tailRadius * 1.65, centerY);
+    ctx.lineTo(leftX - tailRadius * 1.3, centerY + tailRadius * 0.4);
     ctx.stroke();
 
-    ctx.strokeStyle = "rgba(148,163,184,0.4)";
+    // 上面のパネルライン＆リベット
+    ctx.strokeStyle = "rgba(31,41,55,0.9)";
+    ctx.lineWidth = bodyRadius * 0.11;
     ctx.beginPath();
-    ctx.moveTo(bomb.x + r * 0.2, bomb.y - r * 0.1);
-    ctx.lineTo(bomb.x + r * 0.5, bomb.y + r * 0.15);
+    ctx.moveTo(leftX + bodyRadius * 0.4, centerY - bodyRadius * 0.4);
+    ctx.lineTo(rightX - bodyRadius * 0.8, centerY - bodyRadius * 0.2);
     ctx.stroke();
 
-    // DANGER 刻印
+    const rivetCount = 6;
+    ctx.fillStyle = "rgba(148,163,184,0.85)";
+    for (let i = 0; i < rivetCount; i++) {
+      const tR = (i + 0.7) / (rivetCount + 0.4);
+      const rx = leftX + (rightX - leftX) * tR;
+      const ry = centerY - bodyRadius * 0.32;
+      ctx.beginPath();
+      ctx.arc(rx, ry, bodyRadius * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 側面ラベル「DANGER」（ステンシル風に沈んだ文字）
     ctx.save();
-    ctx.translate(bomb.x, bomb.y + r * 0.05);
-    ctx.rotate(-0.1);
-    ctx.font = `${Math.floor(r * 0.7)}px system-ui, sans-serif`;
+    ctx.translate(centerX, centerY + bodyRadius * 0.15);
+    ctx.rotate(-0.02);
+    const labelFontSize = Math.floor(r * 0.65);
+    ctx.font = `600 ${labelFontSize}px system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(15,23,42,0.9)";
-    ctx.fillText("DANGER", 0, 0);
-    ctx.fillStyle = "rgba(148,163,184,0.35)";
-    ctx.translate(-1, -1);
-    ctx.fillText("DANGER", 0, 0);
-    ctx.restore();
 
-    // 導火線（編み込まれた縄のような質感）
-    const fuseLen = r * 0.8; // 元の半分の長さ
-    const fuseStartX = bomb.x + r * 0.35;
-    const fuseStartY = bomb.y - r * 0.6;
-    const fuseEndX = fuseStartX + fuseLen * 0.7;
-    const fuseEndY = fuseStartY - fuseLen * 0.7;
-
-    ctx.lineWidth = 3.5;
-    ctx.strokeStyle = "#f3f4f6";
+    // 暗いプレート
+    const platePaddingX = labelFontSize * 2.3;
+    const platePaddingY = labelFontSize * 0.9;
+    ctx.fillStyle = "rgba(15,23,42,0.96)";
+    ctx.strokeStyle = "rgba(55,65,81,0.9)";
+    ctx.lineWidth = bodyRadius * 0.12;
     ctx.beginPath();
-    ctx.moveTo(fuseStartX, fuseStartY);
-    ctx.quadraticCurveTo(
-      fuseStartX + fuseLen * 0.1,
-      fuseStartY - fuseLen * 0.2,
-      fuseEndX,
-      fuseEndY
-    );
-    ctx.stroke();
-
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#9ca3af";
-    ctx.beginPath();
-    ctx.moveTo(fuseStartX, fuseStartY);
-    ctx.quadraticCurveTo(
-      fuseStartX + fuseLen * 0.05,
-      fuseStartY - fuseLen * 0.15,
-      fuseEndX,
-      fuseEndY
-    );
-    ctx.stroke();
-
-    // 導火線先端の火花（アニメーション）
-    const t = timestamp / 120;
-    const sparkPhase = (Math.sin(t) + 1) / 2; // 0〜1
-    const sparkRadius = r * (0.18 + 0.08 * sparkPhase);
-    const sparkX = fuseEndX + (Math.random() - 0.5) * 2;
-    const sparkY = fuseEndY + (Math.random() - 0.5) * 2;
-
-    const sparkGrad = ctx.createRadialGradient(
-      sparkX,
-      sparkY,
-      0,
-      sparkX,
-      sparkY,
-      sparkRadius
-    );
-    sparkGrad.addColorStop(0, `rgba(252, 211, 77, ${0.8})`);
-    sparkGrad.addColorStop(0.5, "rgba(248, 250, 252, 0.6)");
-    sparkGrad.addColorStop(1, "rgba(252, 211, 77, 0)");
-
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = sparkGrad;
-    ctx.beginPath();
-    ctx.arc(sparkX, sparkY, sparkRadius, 0, Math.PI * 2);
+    ctx.roundRect(-platePaddingX / 2, -platePaddingY / 2, platePaddingX, platePaddingY, bodyRadius * 0.3);
     ctx.fill();
+    ctx.stroke();
+
+    // ステンシル文字
+    const gradText = ctx.createLinearGradient(-platePaddingX / 2, 0, platePaddingX / 2, 0);
+    gradText.addColorStop(0, "#9ca3af");
+    gradText.addColorStop(0.5, "#e5e7eb");
+    gradText.addColorStop(1, "#6b7280");
+    ctx.fillStyle = gradText;
+    ctx.fillText("DANGER", 0, 0);
+
+    ctx.restore();
 
     ctx.restore();
   }
@@ -1831,111 +1808,149 @@ class PurpleDiverGame {
     const r = beer.radius;
     ctx.save();
 
-    const glassWidth = r * 2.0;
-    const glassHeight = r * 3.0;
-    const x = beer.x - glassWidth / 2;
-    const y = beer.y - glassHeight * 0.9;
+    const cx = beer.x;
+    const cy = beer.y;
 
-    // グラスの外枠（透明ガラス）
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(209, 213, 219, 0.9)";
-    ctx.fillStyle = "rgba(15, 23, 42, 0.15)";
-    const radius = r * 0.5;
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + glassWidth - radius, y);
-    ctx.quadraticCurveTo(
-      x + glassWidth,
-      y,
-      x + glassWidth,
-      y + radius
-    );
-    ctx.lineTo(x + glassWidth, y + glassHeight - radius);
-    ctx.quadraticCurveTo(
-      x + glassWidth,
-      y + glassHeight,
-      x + glassWidth - radius,
-      y + glassHeight
-    );
-    ctx.lineTo(x + radius, y + glassHeight);
-    ctx.quadraticCurveTo(
-      x,
-      y + glassHeight,
-      x,
-      y + glassHeight - radius
-    );
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // 黄金色のビール本体
-    const beerTop = y + r * 0.3;
-    const beerBottom = y + glassHeight - r * 0.2;
-    const beerGrad = ctx.createLinearGradient(0, beerTop, 0, beerBottom);
-    beerGrad.addColorStop(0, "#fef3c7");
-    beerGrad.addColorStop(0.3, "#fbbf24");
-    beerGrad.addColorStop(1, "#b45309");
-
-    ctx.fillStyle = beerGrad;
-    ctx.fillRect(
-      x + r * 0.35,
-      beerTop,
-      glassWidth - r * 0.7,
-      beerBottom - beerTop
-    );
-
-    // 泡（クリーミーな白い泡）
-    const foamY = beerTop - r * 0.35;
-    const foamRadius = r * 0.65;
-    const foamCount = 5;
-    for (let i = 0; i < foamCount; i++) {
-      const fx = x + glassWidth * (0.15 + 0.18 * i);
-      const fy = foamY + (i % 2 === 0 ? 0 : r * 0.12);
-      ctx.fillStyle = "rgba(248, 250, 252, 0.96)";
-      ctx.beginPath();
-      ctx.arc(fx, fy, foamRadius * (0.7 + 0.1 * (i % 2)), 0, Math.PI * 2);
-      ctx.fill();
+    // 画像が読み込めていればローカルアセット「ロブスター.png」を使用
+    if (this.lobsterImage && this.lobsterImageLoaded) {
+      // 表示サイズを従来の 2 倍に拡大（幅・高さとも）
+      const width = r * 3.0 * 2;
+      const height = r * 2.0 * 2;
+      ctx.drawImage(
+        this.lobsterImage,
+        cx - width / 2,
+        cy - height / 2,
+        width,
+        height
+      );
+      ctx.restore();
+      return;
     }
 
-    // グラス表面の結露（水滴）
-    const dropletCount = 6;
-    const t = timestamp / 800;
-    for (let i = 0; i < dropletCount; i++) {
-      const phase = (i / dropletCount) * Math.PI * 2;
-      const dx = (Math.sin(t + phase) * glassWidth) / 6;
-      const dy = ((t * 10 + i * 7) % (beerBottom - beerTop)) + beerTop;
-      const dropX = beer.x + dx * 0.4;
-      const dropY = dy;
-      ctx.strokeStyle = "rgba(236, 252, 203, 0.85)";
-      ctx.lineWidth = 1.2;
+    // フォールバック：従来のベクターロブスター描画（非発光）
+    const bodyLen = r * 3.0;
+    const bodyRad = r * 1.1;
+    const left = cx - bodyLen * 0.4;
+    const right = cx + bodyLen * 0.6;
+
+    const shellGrad = ctx.createLinearGradient(left, cy, right, cy);
+    shellGrad.addColorStop(0, "#7f1d1d");
+    shellGrad.addColorStop(0.4, "#b91c1c");
+    shellGrad.addColorStop(0.7, "#ef4444");
+    shellGrad.addColorStop(1, "#f97316");
+
+    ctx.fillStyle = shellGrad;
+    ctx.beginPath();
+    ctx.moveTo(left, cy - bodyRad * 0.6);
+    ctx.quadraticCurveTo(cx, cy - bodyRad * 1.1, right, cy - bodyRad * 0.3);
+    ctx.quadraticCurveTo(
+      right + bodyLen * 0.05,
+      cy,
+      right,
+      cy + bodyRad * 0.3
+    );
+    ctx.quadraticCurveTo(cx, cy + bodyRad * 1.1, left, cy + bodyRad * 0.6);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(248, 113, 113, 0.85)";
+    ctx.lineWidth = r * 0.18;
+    for (let i = -1; i <= 2; i++) {
+      const t = (i + 1.8) / 4;
+      const x = left + (right - left) * t;
       ctx.beginPath();
-      ctx.moveTo(dropX, dropY - r * 0.1);
-      ctx.lineTo(dropX, dropY + r * 0.05);
+      ctx.moveTo(x, cy - bodyRad * 0.45);
+      ctx.lineTo(x - r * 0.15, cy + bodyRad * 0.45);
       ctx.stroke();
     }
 
-    // グラスのハイライト（冷えた光沢）
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = "rgba(248, 250, 252, 0.3)";
+    const clawOffsetX = bodyLen * 0.55;
+    const clawOffsetY = bodyRad * 0.3;
+    const clawR = r * 0.9;
+
+    const drawClaw = (sign) => {
+      const baseX = cx + clawOffsetX;
+      const baseY = cy + sign * clawOffsetY;
+      const innerR = clawR * 0.4;
+
+      const outerGrad = ctx.createLinearGradient(
+        baseX,
+        baseY - sign * clawR,
+        baseX + clawR,
+        baseY + sign * clawR
+      );
+      outerGrad.addColorStop(0, "#b91c1c");
+      outerGrad.addColorStop(0.4, "#ef4444");
+      outerGrad.addColorStop(1, "#f97316");
+      ctx.fillStyle = outerGrad;
+      ctx.beginPath();
+      ctx.moveTo(baseX, baseY);
+      ctx.quadraticCurveTo(
+        baseX + clawR * 0.35,
+        baseY - sign * clawR * 0.55,
+        baseX + clawR,
+        baseY
+      );
+      ctx.quadraticCurveTo(
+        baseX + clawR * 0.35,
+        baseY + sign * clawR * 0.55,
+        baseX,
+        baseY
+      );
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = "#7f1d1d";
+      ctx.beginPath();
+      ctx.moveTo(baseX - innerR * 0.4, baseY);
+      ctx.quadraticCurveTo(
+        baseX + innerR * 0.2,
+        baseY - sign * innerR * 0.8,
+        baseX + innerR * 0.9,
+        baseY
+      );
+      ctx.quadraticCurveTo(
+        baseX + innerR * 0.2,
+        baseY + sign * innerR * 0.6,
+        baseX - innerR * 0.4,
+        baseY
+      );
+      ctx.closePath();
+      ctx.fill();
+    };
+    drawClaw(-1);
+    drawClaw(1);
+
+    ctx.strokeStyle = "rgba(254, 242, 242, 0.9)";
+    ctx.lineWidth = r * 0.12;
     ctx.beginPath();
-    ctx.moveTo(x + glassWidth * 0.25, y + r * 0.1);
+    ctx.moveTo(cx - bodyLen * 0.25, cy - bodyRad * 0.7);
     ctx.quadraticCurveTo(
-      x + glassWidth * 0.18,
-      y + glassHeight * 0.5,
-      x + glassWidth * 0.3,
-      y + glassHeight * 0.95
+      cx - bodyLen * 0.6,
+      cy - bodyRad * 1.2,
+      cx - bodyLen * 0.9,
+      cy - bodyRad * 0.4
     );
-    ctx.lineTo(x + glassWidth * 0.22, y + glassHeight * 0.95);
+    ctx.moveTo(cx - bodyLen * 0.1, cy - bodyRad * 0.7);
     ctx.quadraticCurveTo(
-      x + glassWidth * 0.12,
-      y + glassHeight * 0.5,
-      x + glassWidth * 0.2,
-      y + r * 0.1
+      cx - bodyLen * 0.5,
+      cy - bodyRad * 1.5,
+      cx - bodyLen * 0.95,
+      cy - bodyRad * 0.8
     );
-    ctx.closePath();
-    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(248, 113, 113, 0.9)";
+    ctx.lineWidth = r * 0.16;
+    for (let i = 0; i < 4; i++) {
+      const tLeg = (i + 0.7) / 4.5;
+      const xLeg = left + (right - left) * tLeg;
+      const legLen = r * 1.1;
+      ctx.beginPath();
+      ctx.moveTo(xLeg, cy + bodyRad * 0.35);
+      ctx.lineTo(xLeg + legLen * 0.6, cy + bodyRad * 0.9);
+      ctx.stroke();
+    }
 
     ctx.restore();
   }
