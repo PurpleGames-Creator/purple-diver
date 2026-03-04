@@ -286,7 +286,7 @@ class PurpleDiverGame {
 
   _setupCanvasSize() {
     const rect = this.canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.0);
 
     this.logicalWidth = rect.width;
     this.logicalHeight = rect.height;

@@ -448,6 +448,10 @@ body {
   display: block;
   touch-action: none;
   -webkit-user-select: none;
+  image-rendering: pixelated;
+  transform: translateZ(0);
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* ゲームオーバーオーバーレイ（モバイル最適化・パープル基調） */
