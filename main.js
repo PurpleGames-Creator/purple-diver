@@ -64,8 +64,8 @@ document.addEventListener("DOMContentLoaded", () => {
         );
       });
 
-      // ランキング読み込み（後で実実装）
-      loadRanking(target);
+      // ランキング読み込み（接続確認後に取得）
+      loadRankingAfterConnection(target);
     });
   });
 
@@ -177,15 +177,22 @@ document.addEventListener("DOMContentLoaded", () => {
       hideGameoverOverlay();
       screenGame.classList.remove("screen--active");
       screenHome.classList.add("screen--active");
-      loadRanking("today");
+      loadRankingAfterConnection("today");
     });
   }
 
-  // 初期表示：今日のランキングを読み込み
-  loadRanking("today");
+  // 接続が確認できるまでランキングは表示しない（サンプルデータ非表示）
+  // 初期表示：Supabase 接続待ちのうえで今日のランキングを読み込み
+  (async function initRanking() {
+    await loadRankingAfterConnection("today");
+  })();
 });
 
-async function loadRanking(range) {
+/**
+ * Supabase 接続が有効になるまで待ってからランキングを取得・表示する。
+ * 接続前に取得が走って失敗しないよう、必ず接続待ちをしてから fetch する。
+ */
+async function loadRankingAfterConnection(range) {
   const map = {
     today: document.getElementById("ranking-today"),
     week: document.getElementById("ranking-week"),
@@ -194,15 +201,30 @@ async function loadRanking(range) {
   const listEl = map[range];
   if (!listEl) return;
 
-  // プレースホルダー表示
   listEl.innerHTML = `<li class="ranking-item ranking-item--placeholder">読み込み中…</li>`;
 
+  const waitForConnection =
+    typeof window.waitForSupabaseConnection === "function"
+      ? window.waitForSupabaseConnection
+      : null;
+  if (waitForConnection) {
+    const { connected } = await waitForConnection(5000);
+    if (!connected) {
+      listEl.innerHTML = `<li class="ranking-item ranking-item--placeholder">オフラインのためランキングを表示できません。</li>`;
+      return;
+    }
+  }
+
   if (typeof fetchRanking !== "function") {
-    listEl.innerHTML = `<li class="ranking-item ranking-item--placeholder">Supabase未設定のため、ランキングはまだ表示できません。</li>`;
+    listEl.innerHTML = `<li class="ranking-item ranking-item--placeholder">Supabase未設定のため、ランキングは表示できません。</li>`;
     return;
   }
 
-  const { data, error } = await fetchRanking(range);
+  const { data, error, skipped } = await fetchRanking(range);
+  if (skipped) {
+    listEl.innerHTML = `<li class="ranking-item ranking-item--placeholder">オフラインのためランキングを表示できません。</li>`;
+    return;
+  }
   if (error) {
     console.error(error);
     listEl.innerHTML = `<li class="ranking-item ranking-item--placeholder">ランキングの取得に失敗しました。</li>`;

@@ -5,6 +5,23 @@
 const RANKING_TABLE = "diver_scores";
 
 /**
+ * Supabase の接続完了を待つ（supabase-config の init 完了後にリトライ）。
+ * ランキング取得前に必ず呼ぶことで、接続前に取得が走って失敗するのを防ぐ。
+ * @param {number} maxWaitMs 接続確認の最大待機時間（ミリ秒）
+ * @returns {Promise<{ connected: boolean }>} 接続できたかどうか
+ */
+async function waitForSupabaseConnection(maxWaitMs = 5000) {
+  if (window.supabaseReadyPromise) {
+    await window.supabaseReadyPromise;
+  }
+  const client = await getSupabaseClientWithRetry(maxWaitMs, 100);
+  return { connected: !!client };
+}
+if (typeof window !== "undefined") {
+  window.waitForSupabaseConnection = waitForSupabaseConnection;
+}
+
+/**
  * Supabaseクライアントの初期化待ち・取得ヘルパー
  * ライブラリ読み込みや supabase-config.js の初期化が少し遅れても、
  * 一定時間まではリトライしてから offline 判定にする。
@@ -12,9 +29,8 @@ const RANKING_TABLE = "diver_scores";
  * @param {number} intervalMs
  * @returns {Promise<any|null>}
  */
-async function getSupabaseClientWithRetry(maxWaitMs = 2000, intervalMs = 100) {
+async function getSupabaseClientWithRetry(maxWaitMs = 5000, intervalMs = 100) {
   const start = Date.now();
-  // すでに存在していれば即返す
   if (window.supabaseClient) return window.supabaseClient;
 
   while (Date.now() - start < maxWaitMs) {
@@ -75,12 +91,14 @@ async function fetchRanking(range) {
     fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
   }
 
+  // テーブル定義に合わせてカラムは score（depth_m は未使用）
+  // 「100人のユニークな最高スコア」を得るため、多めに取得してから重複排除
   let query = client
     .from(RANKING_TABLE)
     .select("*")
     .order("score", { ascending: false })
     .order("created_at", { ascending: true })
-    .limit(100);
+    .limit(500);
 
   if (fromDate) {
     query = query.gte("created_at", fromDate.toISOString());
@@ -89,28 +107,31 @@ async function fetchRanking(range) {
   const { data, error } = await query;
 
   if (error || !Array.isArray(data)) {
-    return { data, error };
+    return { data: [], error, skipped: false };
   }
 
-  // ニックネームごとに自己ベスト（最高スコア）のみ残す
+  // 一人一枠：同じ nickname は「一番高い score」の1件だけ残す
   const bestByName = data.reduce((acc, row) => {
-    const name = row.nickname ?? "";
+    const name = String(row.nickname ?? "").trim();
     if (!name) return acc;
+    const sc = Number(row.score ?? 0);
     const existing = acc[name];
-    if (!existing || (row.score ?? 0) > (existing.score ?? 0)) {
+    if (!existing || sc > Number(existing.score ?? 0)) {
       acc[name] = row;
     }
     return acc;
   }, /** @type {Record<string, any>} */ ({}));
 
-  const deduped = Object.values(bestByName).sort((a, b) => {
-    const sa = a.score ?? 0;
-    const sb = b.score ?? 0;
-    if (sb !== sa) return sb - sa; // スコア降順
-    const ta = new Date(a.created_at || 0).getTime();
-    const tb = new Date(b.created_at || 0).getTime();
-    return ta - tb; // 同スコアなら古い方を上に
-  });
+  const deduped = Object.values(bestByName)
+    .sort((a, b) => {
+      const sa = Number(a.score ?? 0);
+      const sb = Number(b.score ?? 0);
+      if (sb !== sa) return sb - sa;
+      const ta = new Date(a.created_at || 0).getTime();
+      const tb = new Date(b.created_at || 0).getTime();
+      return ta - tb;
+    })
+    .slice(0, 100);
 
   return { data: deduped, error: null };
 }

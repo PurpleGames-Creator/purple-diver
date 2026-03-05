@@ -143,6 +143,7 @@ class PurpleDiverGame {
 
     // 障害物・アイテム
     this.bombs = [];
+    this.bombPool = [];
     this.beers = [];
     this.bombRadius = 18 * 0.5;
     // ロブスターアイテムの当たり判定半径（表示サイズ 2倍に合わせて拡大）
@@ -613,8 +614,21 @@ class PurpleDiverGame {
     // 地平線も同じ速度で上にスクロール
     this.horizonY += deltaY;
 
-    // 画面外を削除
-    this.bombs = this.bombs.filter((b) => b.y + b.radius > 0);
+    // 画面外を削除（魚雷はプールへ戻す）
+    {
+      const bombs = this.bombs;
+      const pool = this.bombPool;
+      let write = 0;
+      for (let i = 0; i < bombs.length; i++) {
+        const b = bombs[i];
+        if (b.y + b.radius > 0) {
+          bombs[write++] = b;
+        } else {
+          pool.push(b);
+        }
+      }
+      bombs.length = write;
+    }
     this.beers = this.beers.filter((b) => b.y + b.radius > 0);
     this.dustParticles = this.dustParticles.filter(
       (p) => p.life < p.lifeMax && p.y + p.size > 0
@@ -640,12 +654,17 @@ class PurpleDiverGame {
         vx = dir * baseVx * scale;
       }
 
-      this.bombs.push({
-        x: Math.random() * this.logicalWidth,
-        y: this.logicalHeight + this.bombRadius * 2,
-        radius: this.bombRadius,
-        vx,
-      });
+      let bomb;
+      if (this.bombPool && this.bombPool.length) {
+        bomb = this.bombPool.pop();
+      } else {
+        bomb = { x: 0, y: 0, radius: this.bombRadius, vx: 0 };
+      }
+      bomb.x = Math.random() * this.logicalWidth;
+      bomb.y = this.logicalHeight + this.bombRadius * 2;
+      bomb.radius = this.bombRadius;
+      bomb.vx = vx;
+      this.bombs.push(bomb);
     }
 
     if (Math.random() < this.beerSpawnRatePerSec * dt) {
@@ -1788,7 +1807,13 @@ class PurpleDiverGame {
     ctx.strokeStyle = "rgba(55,65,81,0.9)";
     ctx.lineWidth = bodyRadius * 0.12;
     ctx.beginPath();
-    ctx.roundRect(-platePaddingX / 2, -platePaddingY / 2, platePaddingX, platePaddingY, bodyRadius * 0.3);
+    ctx.roundRect(
+      -platePaddingX / 2,
+      -platePaddingY / 2,
+      platePaddingX,
+      platePaddingY,
+      bodyRadius * 0.3
+    );
     ctx.fill();
     ctx.stroke();
 
