@@ -704,14 +704,29 @@ class PurpleDiverGame {
   }
 
   _spawnEntities(dt) {
-    if (Math.random() < this.bombSpawnRatePerSec * dt) {
+    // 深度に応じた爆弾出現率の動的調整
+    let bombSpawnRate = this.bombSpawnRatePerSec;
+    if (this.depthMeters >= 300) {
+      bombSpawnRate *= 1.3; // 300m 超：30%増
+    }
+    if (this.depthMeters >= 500) {
+      bombSpawnRate *= 1.2; // 500m 超：さらに20%増（合計56%増）
+    }
+
+    if (Math.random() < bombSpawnRate * dt) {
       // 魚雷の生成：100m 以上では横移動速度を付与（深さごとに 1.2 倍スケーリング）
       let vx = 0;
       if (this.depthMeters >= 100) {
         // ベース横速度を従来の 50%（0.25倍）に抑えて回避余地を確保
         const baseVx = this.scrollSpeedBase * 0.25; // 100m 時点の基準横速度
         const steps = Math.max(0, Math.floor((this.depthMeters - 100) / 100)); // 100m ごとに増加
-        const scale = Math.pow(1.2, steps);
+        let scale = Math.pow(1.2, steps);
+
+        // 500m 超でスピードさらに上昇
+        if (this.depthMeters >= 500) {
+          scale *= 1.3; // 横速度を30%増加
+        }
+
         const dir = Math.random() < 0.5 ? -1 : 1;
         vx = dir * baseVx * scale;
       }
