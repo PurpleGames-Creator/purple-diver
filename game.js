@@ -123,8 +123,8 @@ class PurpleDiverGame {
     // 進行
     // 初期深度（0m）からスタート
     this.depthMeters = 0;
-    // スタート時の初速をこれまでより 1.5 倍程度に強化
-    this.scrollSpeedBase = 220 * 1.95; // px/sec
+    // 難易度緩和のため初速を調整
+    this.scrollSpeedBase = 220 * 1.5; // px/sec
     // 500m 到達時に到達したい最高速度の目安（base の約3倍弱）
     this.scrollSpeedMax = 640;
     this.depthAtMaxSpeed = 500; // 500m で最大速度に到達
@@ -139,8 +139,8 @@ class PurpleDiverGame {
     this.keyLeft = false;
     this.keyRight = false;
     this.horizontalDir = 0;
-    // 左右移動スピードをさらに 1.3 倍強化
-    this.horizontalSpeed = 220 * 1.44 * 1.3; // px/sec
+    // 左右移動スピード（難易度緩和）
+    this.horizontalSpeed = 220 * 1.44; // px/sec
 
     // 障害物・アイテム
     this.bombs = [];
@@ -156,13 +156,12 @@ class PurpleDiverGame {
     this.lobsterImage.onload = () => {
       this.lobsterImageLoaded = true;
     };
-    // 爆弾（魚雷）の出現率：従来比 1.5 倍
-    this.bombSpawnRatePerSec = 1.2 * 1.5; // 秒あたり出現期待値
-    this.beerSpawnRatePerSec = 0.25;
+    // 爆弾（魚雷）の出現率を難易度緩和のため 1.0 に調整
+    this.bombSpawnRatePerSec = 1.0; // 秒あたり出現期待値
+    this.beerSpawnRatePerSec = 0.35;
 
-    // 無敵
-    this.invincibleUntil = 0;
-    this.boostUntil = 0; // 掘削開始直後のブースト時間
+    // ブースト状態（ロブスター獲得時のスピードアップ）
+    this.boostedUntil = 0;
 
     // パーティクル
     this.dustParticles = []; // 土煙
@@ -252,8 +251,7 @@ class PurpleDiverGame {
     this.bubbleParticles = [];
     this.invincibleTrailParticles = [];
     // マイルストーン演出は廃止（深度テキストのみ維持）
-    this.invincibleUntil = 0;
-    this.boostUntil = 0;
+    this.boostedUntil = 0;
     this.bombBoostStartTime = 0;
     this.screenFlashUntil = 0;
     this.screenShakeUntil = 0;
@@ -311,8 +309,8 @@ class PurpleDiverGame {
     this._stopDrillSound();
   }
 
-  get isInvincible() {
-    return performance.now() < this.invincibleUntil;
+  get isBoosted() {
+    return performance.now() < this.boostedUntil;
   }
 
   _isSuperCongratsActive() {
@@ -519,8 +517,7 @@ class PurpleDiverGame {
         this.sparkParticles = [];
         this.bubbleParticles = [];
         this.bgOffset = 0;
-        this.invincibleUntil = 0;
-        this.boostUntil = performance.now() + 100; // 掘削開始直後の軽いブースト
+        this.boostedUntil = performance.now() + 100; // 掘削開始直後の軽いブースト
         if (this.depthLabelEl) this.depthLabelEl.textContent = "0";
       }
 
@@ -573,7 +570,7 @@ class PurpleDiverGame {
     speed = Math.min(speed, this.scrollSpeedMax); // 上限でキャップ
 
     // 掘削開始直後のブースト
-    if (performance.now() < this.boostUntil) {
+    if (performance.now() < this.boostedUntil) {
       speed *= 1.6;
     }
 
@@ -797,13 +794,13 @@ class PurpleDiverGame {
       }
     }
 
-    // ビール取得（無敵）
+    // ビール取得（スピードアップ）
     this.beers = this.beers.filter((beer) => {
       const hitAny = rects.some(({ rx, ry }) =>
         this._circleRectIntersect(beer.x, beer.y, beer.radius, rx, ry, rw, rh)
       );
       if (hitAny) {
-        this.invincibleUntil = performance.now() + 5000;
+        this.boostedUntil = performance.now() + 5000;
         this._playInvincibleSound();
         return false;
       }
@@ -825,9 +822,9 @@ class PurpleDiverGame {
         )
       );
       if (hit) {
-        if (this.isInvincible || this._isSuperCongratsActive()) {
-          this.bombBoostStartTime = performance.now();
-          return false; // 無敵中はすり抜け（破壊）＋ブースト発動
+        if (this.isBoosted || this._isSuperCongratsActive()) {
+          // ブースト状態またはスーパーコングラッツ中はすり抜け（スピードアップなし）
+          return false;
         } else {
           if (!hitBomb) {
             hitBomb = { x: bomb.x, y: bomb.y };
@@ -1092,8 +1089,8 @@ class PurpleDiverGame {
     // 宝箱取得時の金色パーティクル（ゴールドシャワー）
     this._drawGoldParticles();
 
-    // キャラクターと無敵オーラ（左右端ループ描画）
-    const inv = this.isInvincible || this._isSuperCongratsActive();
+    // キャラクターとブーストオーラ（左右端ループ描画）
+    const inv = this.isBoosted || this._isSuperCongratsActive();
     this._drawWrappedCharacter(this.charX, this.charY, inv, timestamp);
 
     // 無敵時も画面全体の追加エフェクトは描かず、キャラ周りのオーラのみ表示
@@ -1356,8 +1353,8 @@ class PurpleDiverGame {
     const CHAR_HALF_W = this.charHalfWidth ?? this.charSize / 2;
 
     const remaining =
-      this.invincibleUntil > 0
-        ? (this.invincibleUntil - performance.now()) / 1000
+      this.boostedUntil > 0
+        ? (this.boostedUntil - performance.now()) / 1000
         : 0;
     const isWarnFlash = invincible && remaining > 0 && remaining <= 2;
     const flashOn = !isWarnFlash || Math.floor(timestamp / 120) % 2 === 0;
@@ -1530,10 +1527,10 @@ class PurpleDiverGame {
   }
 
   _updateBubbleParticles(dt) {
-    const nowInvincible = this.isInvincible;
+    const nowBoosted = this.isBoosted;
     const maxCount = 80;
-    if (nowInvincible) {
-      const remaining = (this.invincibleUntil - performance.now()) / 1000;
+    if (nowBoosted) {
+      const remaining = (this.boostedUntil - performance.now()) / 1000;
       const intensity = Math.max(0.3, Math.min(1, remaining / 5));
       const emission = 35 * intensity;
       const expected = emission * dt;
@@ -1576,7 +1573,7 @@ class PurpleDiverGame {
 
   _emitInvincibleTrail(x, y, laneIndex) {
     const maxCount = 160;
-    if (!this.isInvincible) return;
+    if (!this.isBoosted) return;
     if (this.invincibleTrailParticles.length > maxCount) return;
 
     const sizeBase = this.charSize * 0.04;
@@ -1940,8 +1937,8 @@ class PurpleDiverGame {
 
   _onTreasureCollected() {
     const now = performance.now();
-    // 3秒間の無敵＋豪華演出
-    this.invincibleUntil = Math.max(this.invincibleUntil, now + 3000);
+    // 3秒間のブースト＋豪華演出
+    this.boostedUntil = Math.max(this.boostedUntil, now + 3000);
     this.superCongratsUntil = now + 3000;
     this.superCongratsActive = true;
 
