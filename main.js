@@ -4,7 +4,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const screenHome = document.getElementById("screen-home");
   const screenGame = document.getElementById("screen-game");
   const nicknameInput = document.getElementById("nickname");
+  const nicknameError = document.getElementById("nickname-error");
   const startButton = document.getElementById("start-button");
+
+  // ニックネーム未入力エラー表示（他ゲームと統一：インライン表示＋シェイク＋フォーカス）
+  function showNickError() {
+    if (nicknameError) nicknameError.textContent = "ニックネームを入力してください";
+    nicknameInput.classList.remove("invalid");
+    void nicknameInput.offsetWidth; // アニメ再生のためリセット
+    nicknameInput.classList.add("invalid");
+    nicknameInput.focus();
+  }
+  if (nicknameInput) {
+    nicknameInput.addEventListener("input", () => {
+      if (nicknameError) nicknameError.textContent = "";
+      nicknameInput.classList.remove("invalid");
+    });
+  }
   const tabButtons = document.querySelectorAll(".tab");
   const gameoverOverlay = document.getElementById("gameover-overlay");
   const gameoverScoreEl = document.getElementById("gameover-score");
@@ -74,8 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("[BOOT] 1. GAME START ボタン押下");
     const nickname = nicknameInput.value.trim();
     if (!nickname) {
-      alert("ニックネームを入力してください。");
-      nicknameInput.focus();
+      showNickError();
       return;
     }
 
